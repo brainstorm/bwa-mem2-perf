@@ -1,0 +1,9 @@
+# Exclude all bioinformatics blobs
+*.fastq
+*.fasta
+*.fa
+*.fq
+*.fna
+*.fna.*
+*.aln
+*.sam
