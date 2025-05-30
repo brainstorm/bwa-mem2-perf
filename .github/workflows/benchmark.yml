@@ -1,0 +1,66 @@
+name: BWA-MEM2 Performance Benchmark
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  bwa-mem2-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev libbz2-dev liblzma-dev wget art-nextgen-simulation-tools
+
+      - name: Checkout bwa-mem2 repository w/ bioconda patches applied
+        uses: actions/checkout@v4
+        with:
+          repository: "dslarm/bwa-mem2"
+          ref: "sse2neon"
+          submodules: true
+          path: bwa-mem2
+
+      - name: Compile bwa-mem2
+        run: |
+          cd bwa-mem2
+          make -j$(nproc)
+
+      - name: Download E. coli reference genome and rename it to ecoli.fa
+        run: |
+          cd bwa-mem2
+          wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz
+          gunzip GCF_000005845.2_ASM584v2_genomic.fna.gz && mv GCF_000005845.2_ASM584v2_genomic.fna ecoli.fa
+
+      - name: Index reference genome with bwa-mem2
+        run: |
+          cd bwa-mem2
+          ./bwa-mem2 index ecoli.fa
+
+      - name: Simulate some e.coli reads with a fixed seed (666)
+        run: |
+          cd bwa-mem2
+          art_illumina -ss HS25 -i ecoli.fa -rs 666 -l 100 -f 1 -o ecoli_art_illumina_simlated_reads
+
+#      - name: Download E. coli sample reads
+#        run: |
+#          wget ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/000/SRR2584863/SRR2584863_1.fastq.gz
+#          wget ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/000/SRR2584863/SRR2584863_2.fastq.gz
+
+      - name: Align reads with bwa-mem2
+        run: |
+          cd bwa-mem2
+          ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
+
+#      - name: Convert SAM to BAM and sort
+#        run: |
+#          sudo apt-get install -y samtools
+#          samtools view -Sb bwa-mem2-perf/alignment.sam | samtools sort -o alignment.sorted.bam
+
+#      - name: Index BAM file
+#        run: |
+#          samtools index alignment.sorted.bam
