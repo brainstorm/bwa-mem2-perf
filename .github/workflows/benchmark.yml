@@ -17,7 +17,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential zlib1g-dev libbz2-dev liblzma-dev wget art-nextgen-simulation-tools
 
-      - name: Checkout bwa-mem2 repository w/ bioconda patches applied
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+# BWA-MEM2 and zlib₋* variants prep
+#
+      - name: Checkout bwa-mem2 w/ latest bioconda patches applied
         uses: actions/checkout@v4
         with:
           repository: "dslarm/bwa-mem2"
@@ -30,6 +37,31 @@ jobs:
           cd bwa-mem2
           make -j$(nproc)
 
+      - name: Checkout zlib-rs
+        uses: actions/checkout@v4
+        with:
+          repository: "trifectatechfoundation/zlib-rs"
+          path: zlib-rs
+
+      - name: Compile zlib-rs C bindings
+        run: |
+          cd zlib-rs/libz-rs-sys-cdylib/
+          cargo build --release --no-default-features --features "c-allocator,gz"
+          ls -alh target/release/libz_rs.so && nm target/release/libz_rs.so | grep gz
+
+      - name: Checkout zlib-ng
+        uses: actions/checkout@v4
+        with:
+          repository: "zlib-ng/zlib-ng"
+          path: zlib-ng
+
+      - name: Compile zlib-ng
+        run: |
+          cd zlib-ng && ./configure
+          make -j$(nproc)
+
+# Bioinformatics
+#
       - name: Download E. coli reference genome and rename it to ecoli.fa
         run: |
           cd bwa-mem2
@@ -39,7 +71,7 @@ jobs:
       - name: Index reference genome with bwa-mem2
         run: |
           cd bwa-mem2
-          ./bwa-mem2 index ecoli.fa
+          time ./bwa-mem2 index ecoli.fa
 
       - name: Simulate some e.coli reads with a fixed seed (666)
         run: |
@@ -55,6 +87,14 @@ jobs:
         run: |
           cd bwa-mem2
           ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
+
+      - name: Run benchmarks w/ codspeed.io
+        uses: CodSpeedHQ/action@v3
+        with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          run: |
+            cd bwa-mem2
+            ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
 
 #      - name: Convert SAM to BAM and sort
 #        run: |
