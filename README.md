@@ -18,7 +18,7 @@ $ wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v3
 $ wget ftp://ftp-trace.ncbi.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/fastq/NIST7035_TAAGGCGA_L001_R1_001.fastq.gz
 $ gunzip human_g1k_v37.fasta.gz
 $ bwa-mem2 index human_g1k_v37.fasta
-$ bwa-mem2 mem -t 16 human_g1k_v37.fasta NIST7035_TAAGGCGA_L001_R1_001.fastq.gz
+$ bwa-mem2 mem -t$(nproc) human_g1k_v37.fasta NIST7035_TAAGGCGA_L001_R1_001.fastq.gz
 ```
 
 But would other organisms with smaller genomes be a good substitute for lower resource intensive CI workers?

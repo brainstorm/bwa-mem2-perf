@@ -1,13 +1,25 @@
 name: BWA-MEM2 Performance Benchmark
 
-on:
-  push:
-    branches: [ master ]
-  workflow_dispatch:
+on: push
 
 jobs:
   bwa-mem2-benchmark:
-    runs-on: ubuntu-latest
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      matrix:
+        include:
+          - rust: stable
+            os: ubuntu-latest
+            features: ""
+            target: "x86_64-unknown-linux-gnu"
+#          - rust: "stable"
+#            os: ubuntu-24.04-arm
+#            features: ""
+#            target: "aarch64-unknown-linux-gnu"
+#          - rust: "stable"
+#            os: macos-latest
+#            features: ""
+#            target: "aarch64-apple-darwin"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -15,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential zlib1g-dev libbz2-dev liblzma-dev wget art-nextgen-simulation-tools
+          sudo apt-get install -y build-essential zlib1g-dev libbz2-dev liblzma-dev wget art-nextgen-simulation-tools valgrind
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -33,8 +45,8 @@ jobs:
           path: bwa-mem2
 
       - name: Compile bwa-mem2
+        working-directory: bwa-mem2
         run: |
-          cd bwa-mem2
           make -j$(nproc)
 
       - name: Checkout zlib-rs
@@ -57,44 +69,67 @@ jobs:
 
       - name: Compile zlib-ng
         run: |
-          cd zlib-ng && ./configure
+          cd zlib-ng && ./configure --zlib-compat
           make -j$(nproc)
 
 # Bioinformatics
 #
       - name: Download E. coli reference genome and rename it to ecoli.fa
+        working-directory: bwa-mem2
         run: |
-          cd bwa-mem2
           wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz
           gunzip GCF_000005845.2_ASM584v2_genomic.fna.gz && mv GCF_000005845.2_ASM584v2_genomic.fna ecoli.fa
 
       - name: Index reference genome with bwa-mem2
+        working-directory: bwa-mem2
         run: |
-          cd bwa-mem2
           time ./bwa-mem2 index ecoli.fa
 
       - name: Simulate some e.coli reads with a fixed seed (666)
+        working-directory: bwa-mem2
         run: |
-          cd bwa-mem2
           art_illumina -ss HS25 -i ecoli.fa -rs 666 -l 100 -f 1 -o ecoli_art_illumina_simlated_reads
 
+# Simulate reads (above) instead of downloading and uncompressing real data
+#
 #      - name: Download E. coli sample reads
 #        run: |
 #          wget ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/000/SRR2584863/SRR2584863_1.fastq.gz
 #          wget ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/000/SRR2584863/SRR2584863_2.fastq.gz
 
-      - name: Align reads with bwa-mem2
+      - name: Align reads with bwa-mem2 (with system's zlib)
+        working-directory: bwa-mem2
         run: |
-          cd bwa-mem2
+          ldd bwa-mem2
           ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
 
-      - name: Run benchmarks w/ codspeed.io
-        uses: CodSpeedHQ/action@v3
-        with:
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          run: |
-            cd bwa-mem2
-            ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
+      - name: Align reads with bwa-mem2 (patching functions for zlib-ng)
+        env:
+#          LD_PRELOAD: "../zlib-ng/libz.so"
+          LD_LIBRARY_PATH: "../zlib-ng/libz.so:$LD_LIBRARY_PATH"
+        working-directory: bwa-mem2
+        run: |
+          ldd bwa-mem2
+          ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
+
+      - name: Align reads with bwa-mem2 (patching functions for zlib-rs)
+        env:
+#          LD_PRELOAD: "../zlib-rs/zlib-rs-sys-cdylib/target/release/deps/libz_rs.o"
+          LD_LIBRARY_PATH: "../zlib-rs/zlib-rs-sys-cdylib/target/release/deps/libz_rs.o:$LD_LIBRARY_PATH"
+        working-directory: bwa-mem2
+        run: |
+          ldd bwa-mem2
+          ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
+
+# TODO: Requires patching bwa-mem2/src/profiling.cpp using google/benchmark library calls, WIP
+#
+#      - name: Run benchmarks w/ codspeed.io
+#        uses: CodSpeedHQ/action@v3
+#        with:
+#          token: ${{ secrets.CODSPEED_TOKEN }}
+#          run: |
+#            cd bwa-mem2
+#            ./bwa-mem2 mem ecoli.fa ecoli_art_illumina_simlated_reads.fq > alignment.sam
 
 #      - name: Convert SAM to BAM and sort
 #        run: |
